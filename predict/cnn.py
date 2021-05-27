@@ -6,25 +6,26 @@ import torch
 from torchtext.legacy import data
 from string import punctuation
 from torchtext.vocab import Vectors
-import spacy
 import time
 import os
 import pickle
 from sklearn.model_selection import KFold
-
+import re
 from predict.baseline_model import get_books_list, prepare_books_dataframe
-
-nlp = spacy.load("ru_core_news_lg")
-
+import spacy
 import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 import torch.optim as optim
 from sklearn.metrics import accuracy_score
+from pathlib import Path
 
+base_path = Path(__file__).parent
+predict_path = (base_path / "../predict").resolve()
+nlp = spacy.load("ru_core_news_lg")
 nltk.download('stopwords')
 stopwords = stopwords.words("russian")
-vectors = Vectors(name='multilingual_embeddings.ru', cache='./')
+vectors = Vectors(name=predict_path / 'multilingual_embeddings.ru', cache='./')
 
 
 def save_vocab(vocab, path):
@@ -42,9 +43,6 @@ def remove_stopwords(text):
     return res
 
 
-import re
-
-
 def string_arr_to_list(str_arr):
     str_arr = re.sub(' +', ' ', str_arr)
     str_arr = re.sub('\n', '', str_arr)
@@ -55,6 +53,8 @@ def string_arr_to_list(str_arr):
     return res
 
 
+# device = torch.cuda.device(2)
+# torch.cuda.set_device(1)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 TEXT = data.Field(tokenize='spacy',
                   tokenizer_language='ru_core_news_lg',
@@ -81,22 +81,13 @@ class CNN(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, text, metadata):
-        # text = [sent len, batch size
         text = text.permute(1, 0)
-        # text = [batch size, sent len]
         embedded = self.embedding(text)
-        # embedded = [batch size, sent len, emb dim]
         embedded = embedded.unsqueeze(1)
-        # embedded = [batch size, 1, sent len, emb dim]
         conved = [F.relu(conv(embedded)).squeeze(3) for conv in self.convs]
-        # conv_n = [batch size, n_filters, sent len - filter_sizes[n]]
         pooled = [F.max_pool1d(conv, conv.shape[2]).squeeze(2) for conv in conved]
-        # pooled_n = [batch size, n_filters]
         cat_1 = torch.cat(pooled, dim=1)
-        # cat = self.dropout(torch.cat(pooled, dim=1))
-
         cat = self.dropout(torch.cat((cat_1, metadata), dim=1))
-        # cat = [batch size, n_filters * len(filter_sizes)]
         return self.fc(cat)
 
 
@@ -129,16 +120,13 @@ def generate_best_model(df_train, df_valid):
         fields=fields,
         skip_header=True
     )
-    # check an example
-    # print(vars(train_data[0]))
+
     MAX_VOCAB_SIZE = 25_000
     TEXT.build_vocab(train_data,
                      max_size=MAX_VOCAB_SIZE,
                      vectors=vectors,
                      unk_init=torch.Tensor.normal_)
     LABEL.build_vocab(train_data)
-    print("LABELS")
-    print(LABEL.vocab.itos)
     BATCH_SIZE = 32
     train_iterator, valid_iterator = data.BucketIterator.splits(
         (train_data, valid_data),
@@ -225,9 +213,6 @@ def generate_best_model(df_train, df_valid):
     return model, TEXT.vocab, LABEL.vocab.itos
 
 
-# from baseline_model import get_books_list, prepare_books_dataframe
-
-
 def KFold_proprotional(dfs_idx, n):
     kf = KFold(n_splits=n, shuffle=True, random_state=42)
     idx_books = [list(kf.split(dfs_idx[class_idx])) for class_idx in range(3)]
@@ -237,8 +222,7 @@ def KFold_proprotional(dfs_idx, n):
 def do_KFold_CNNs(dfs_by_idx, n_split):
     idx_folds = KFold_proprotional(dfs_by_idx, n_split)
 
-    for i in range(n_split - 1):  # Last one is test
-        # form VALID
+    for i in range(n_split - 1):
         valid_books = dfs_by_idx[0].iloc[idx_folds[0][i][1]]
         valid_books = valid_books.append(dfs_by_idx[1].iloc[idx_folds[1][i][1]])
         valid_books = valid_books.append(dfs_by_idx[2].iloc[idx_folds[2][i][1]])
@@ -273,25 +257,23 @@ def KFold_predict(df_test, n_models):
 
     predicts = []
     for i in tqdm(range(n_models)):
-        model_file = os.path.join('cnn_models', 'model_' + str(i) + '.pt')
+        model_file = os.path.join(predict_path / 'cnn_models', 'model_' + str(i) + '.pt')
         model.load_state_dict(torch.load(model_file))
-        label_vocab = np.loadtxt('label_vocab_' + str(i))
+        label_vocab = np.loadtxt(predict_path / ('label_vocab_' + str(i)))
         label_vocab = [int(l) for l in label_vocab]
-        print(label_vocab)
+        # print(label_vocab)
 
-        with open("vocab_" + str(i), 'rb') as vocab_file:
+        with open(predict_path / ("vocab_" + str(i)), 'rb') as vocab_file:
             vocab = pickle.load(vocab_file)
             model_predicts = []
             for text, meta in zip(texts, metadata):
                 text_predict = predict_classes(model, vocab, text, meta)
                 temp = np.zeros(3)
-                i = 0
-                for l in label_vocab:
+
+                for l, i in zip(label_vocab, range(len(label_vocab))):
                     temp[l] = text_predict[0][i]
-                    i += 1
 
                 text_predict[0] = temp
-                # np.moveaxis(text_predict, [0, 1, 2], label_vocab)
                 model_predicts.append(text_predict)
             predicts.append(model_predicts)
 
@@ -301,12 +283,12 @@ def KFold_predict(df_test, n_models):
     return predicts
 
 
-def predict_classes(model, vocab, sentence, metadata):
+def predict_classes(model, vocab, sentence, metadata, min_len=5):
     model.eval()
     tokenized = [tok.text for tok in nlp.tokenizer(sentence)]
     tokenized = remove_stopwords(tokenized)
-    # if len(tokenized) < min_len:
-    #     tokenized += ['<pad>'] * (min_len - len(tokenized))
+    if len(tokenized) < min_len:
+        tokenized += ['<pad>'] * (min_len - len(tokenized))
     indexed = [vocab.stoi[t] for t in tokenized]
     tensor = torch.LongTensor(indexed).to(device)
     tensor = tensor.unsqueeze(1)
@@ -317,35 +299,37 @@ def predict_classes(model, vocab, sentence, metadata):
     return preds.cpu().detach().numpy()
 
 
-n_split = 7
-n_models = n_split - 1
-df_books = get_books_list()
-dfs_by_idx = [df_books[df_books['class'] == class_idx].reset_index(drop=True) for class_idx in range(3)]
+if __name__ == '__main__':
+    n_split = 7
+    n_models = n_split - 1
+    df_books = get_books_list()
+    dfs_by_idx = [df_books[df_books['class'] == class_idx].reset_index(drop=True) for class_idx in range(3)]
 
-idx_folds = KFold_proprotional(dfs_by_idx, n_split)
-test_books = dfs_by_idx[0].iloc[idx_folds[0][n_models][1]]
-test_books = test_books.append(dfs_by_idx[1].iloc[idx_folds[1][n_models][1]])
-test_books = test_books.append(dfs_by_idx[2].iloc[idx_folds[2][n_models][1]])
-test_books = test_books.append(dfs_by_idx[0].iloc[idx_folds[0][n_models][0]])
-test_books = test_books.append(dfs_by_idx[1].iloc[idx_folds[1][n_models][0]])
-test_books = test_books.append(dfs_by_idx[2].iloc[idx_folds[2][n_models][0]])
+    idx_folds = KFold_proprotional(dfs_by_idx, n_split)
+    test_books = dfs_by_idx[0].iloc[idx_folds[0][n_models][1]]
+    test_books = test_books.append(dfs_by_idx[1].iloc[idx_folds[1][n_models][1]])
+    test_books = test_books.append(dfs_by_idx[2].iloc[idx_folds[2][n_models][1]])
+    test_books = test_books.append(dfs_by_idx[0].iloc[idx_folds[0][n_models][0]])
+    test_books = test_books.append(dfs_by_idx[1].iloc[idx_folds[1][n_models][0]])
+    test_books = test_books.append(dfs_by_idx[2].iloc[idx_folds[2][n_models][0]])
 
-test = prepare_books_dataframe(test_books)
-print(test['class'].to_numpy(dtype=int))
+    test = prepare_books_dataframe(test_books)
+    print(test['class'].to_numpy(dtype=int))
 
-do_KFold_CNNs(dfs_by_idx, n_split)
-test_pred = KFold_predict(test, n_models)  # [texts_num, n_models, 3]
+    do_KFold_CNNs(dfs_by_idx, n_split)
+    test_pred = KFold_predict(test, n_models)  # [texts_num, n_models, 3]
 
-votes = np.argmax(test_pred, axis=2)  # [texts_num, n_models]
-vote_pred = [np.argmax(np.bincount(text_votes)) for text_votes in votes]
-print("Acc Hard voting : " + str(accuracy_score(vote_pred, test['class'].to_numpy(dtype=int))))
+    votes = np.argmax(test_pred, axis=2)  # [texts_num, n_models]
+    vote_pred = [np.argmax(np.bincount(text_votes)) for text_votes in votes]
+    print("Acc Hard voting : " + str(accuracy_score(vote_pred, test['class'].to_numpy(dtype=int))))
 
-mean_pred = np.mean(test_pred, axis=1)
-mean_pred = np.argmax(mean_pred, axis=1)
-print("Acc Soft voting : " + str(accuracy_score(mean_pred, test['class'].to_numpy(dtype=int))))
+    mean_pred = np.mean(test_pred, axis=1)
+    mean_pred = np.argmax(mean_pred, axis=1)
+    print("Acc Soft voting : " + str(accuracy_score(mean_pred, test['class'].to_numpy(dtype=int))))
 
-print("Each model:")
-test_each = np.swapaxes(test_pred, 0, 1)
-test_each = np.argmax(test_each, axis=2)
-for model_idx in range(n_models):
-    print("Acc " + str(model_idx) + " : " + str(accuracy_score(test_each[model_idx], test['class'].to_numpy(dtype=int))))
+    print("Each model:")
+    test_each = np.swapaxes(test_pred, 0, 1)
+    test_each = np.argmax(test_each, axis=2)
+    for model_idx in range(n_models):
+        print("Acc " + str(model_idx) + " : " + str(
+            accuracy_score(test_each[model_idx], test['class'].to_numpy(dtype=int))))
