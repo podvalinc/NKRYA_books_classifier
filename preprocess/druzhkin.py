@@ -6,10 +6,13 @@ from string import punctuation
 from deeppavlov.models.tokenizers.ru_sent_tokenizer import ru_sent_tokenize
 from preprocess.tokenize_1 import Tokenizer
 import numpy as np
-
+from pathlib import Path
 
 class DruzhkinAnalyzer(object):
     def __init__(self):
+        base_path = Path(__file__).parent
+        self.preprocess_folder = (base_path / "../preprocess").resolve()
+
         # Граммемы из диплома Дружкина. Стр 49
         # http://opencorpora.org/dict.php?act=gram
         self.grammems = ['ADJF', 'ADJS', 'ADVB', 'CONJ', 'PRCL', 'NOUN', 'NPRO',
@@ -34,7 +37,7 @@ class DruzhkinAnalyzer(object):
                           'знать', 'идеть', 'ление', 'льный', 'нение', 'ность',
                           'овать', 'орить', 'оящий', 'ствие', 'татья', 'шение']
 
-        #['-то', 'ак', 'ал', 'в', 'вот', 'все',
+        # ['-то', 'ак', 'ал', 'в', 'вот', 'все',
         #                   'гда', 'го', 'дь', 'ел', 'ие', 'ием', 'ии', 'ия', 'й', 'л', 'лся',
         #                   'не', 'ние', 'нии', 'ний', 'нию', 'ния', 'но', 'ной', 'ные', 'ных',
         #                   'о', 'ого', 'ой', 'он', 'се', 'сти', 'сь', 'так', 'ти', 'то', 'у',
@@ -70,8 +73,8 @@ class DruzhkinAnalyzer(object):
     def analyze(self, text):
         words = re.findall(r"[\w']+|[!\"#$%&'()*+,\-./:;<=>?@[/\]^_`{|}~]", text)
         words = [word.lower() for word in words if word != '\n' and word != ' ' and word != '']
-        count_grammems = dict(zip(self.grammems, [0]*len(self.grammems)))
-        count_ends = dict(zip(self.word_ends, [0]*len(self.word_ends)))
+        count_grammems = dict(zip(self.grammems, [0] * len(self.grammems)))
+        count_ends = dict(zip(self.word_ends, [0] * len(self.word_ends)))
         for word in words:
             tag = self.parse_word(word).tag
             for g in self.grammems:
@@ -87,11 +90,11 @@ class DruzhkinAnalyzer(object):
             count_ends[key] /= len(words)
 
         top_1000_nouns = [line.rstrip('\n') for line in
-                          open('../preprocess/top_1000_nouns.txt', encoding='utf-8', mode='r')]
+                          open(self.preprocess_folder / 'top_1000_nouns.txt', encoding='utf-8', mode='r')]
         top_1000_verbs = [line.rstrip('\n') for line in
-                          open('../preprocess/top_1000_verbs.txt', encoding='utf-8', mode='r')]
+                          open(self.preprocess_folder / 'top_1000_verbs.txt', encoding='utf-8', mode='r')]
         top_2500_words = [line.rstrip('\n') for line in
-                          open('../preprocess/top_2500_words.txt', encoding='utf-8', mode='r')]
+                          open(self.preprocess_folder / 'top_2500_words.txt', encoding='utf-8', mode='r')]
         words = self.lemmatizer.lemmatize(text)
 
         count_tops = {'top_800_nouns': self._get_num_of_words_from_list(words, top_1000_nouns[:800]),
