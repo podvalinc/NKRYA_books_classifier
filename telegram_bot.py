@@ -1,23 +1,24 @@
 # @Readability_test_bot
 import telebot
 from books_n_kids import predict_text_class
-
-bot = telebot.TeleBot('1753560110:AAE-8mGbP4g7aFopWvci6B9yny4MgsO8bGI')
-
+from predict.BERT_RUSAGE import predict_rusage_class
+bot = telebot.TeleBot('')
+print('Bot is ready')
 
 @bot.message_handler(content_types=['text'])
 def get_text_messages(message):
     if message.text == '/start':
         bot.send_message(message.from_user.id, 'Привет, пришли текст')
     else:
-        idx, prob = predict_text_class(message.text)
-        if idx == 0:
-            class_idx = '1-4 класс'
-        elif idx == 1:
-            class_idx = '5-9 класс'
+        idx_cnn, prob_cnn = predict_text_class(message.text)
+        idx_rusage, prob_rusage = predict_rusage_class(message.text)
+        if idx_cnn == 0:
+            class_name = '1-4 класс'
+        elif idx_cnn == 1:
+            class_name = '5-9 класс'
         else:
-            class_idx = '10-11 класс'
-        bot.send_message(message.from_user.id, class_idx + " " + str(prob))
-
+            class_name = '10-11 класс'
+        bot.send_message(message.from_user.id, "CNN: " + class_name + " " + str(prob_cnn))
+        bot.send_message(message.from_user.id, "BERT Rusage: " + idx_rusage + " " + str(prob_rusage))
 
 bot.polling()
