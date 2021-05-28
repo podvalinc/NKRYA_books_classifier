@@ -73,6 +73,9 @@ class DruzhkinAnalyzer(object):
     def analyze(self, text):
         words = re.findall(r"[\w']+|[!\"#$%&'()*+,\-./:;<=>?@[/\]^_`{|}~]", text)
         words = [word.lower() for word in words if word != '\n' and word != ' ' and word != '']
+
+
+
         count_grammems = dict(zip(self.grammems, [0] * len(self.grammems)))
         count_ends = dict(zip(self.word_ends, [0] * len(self.word_ends)))
         for word in words:
@@ -114,6 +117,9 @@ class DruzhkinAnalyzer(object):
                       'top_400': self._get_num_of_words_from_list(words, top_2500_words[:400]),
                       'top_100': self._get_num_of_words_from_list(words, top_2500_words[:100]),
                       'top_600': self._get_num_of_words_from_list(words, top_2500_words[:600])}
+
+        if len(words) == 0:
+            return np.zeros(147)
 
         for key in count_tops:
             count_tops[key] /= len(words)
