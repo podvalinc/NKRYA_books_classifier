@@ -7,6 +7,7 @@ from predict.BERT_MINOBR import Kfold_predict
 bot = telebot.TeleBot('')
 print('Bot is ready')
 
+
 @bot.message_handler(content_types=['text'])
 def get_text_messages(message):
     if message.text == '/start':
@@ -21,8 +22,10 @@ def get_text_messages(message):
             class_name = '5-9 класс'
         else:
             class_name = '10-11 класс'
-        bot.send_message(message.from_user.id, "CNN: " + class_name + " " + str(prob_cnn))
-        bot.send_message(message.from_user.id, "BERT Rusage: " + idx_rusage + " " + str(prob_rusage))
-        bot.send_message(message.from_user.id, "BERT Мин. Просв.: " + idx_minobr + " " + str(prob_minobr))
+
+        bot.send_message(message.from_user.id, f'CNN: {class_name} {prob_cnn} \n' +
+                         f'BERT Мин. Просв: {idx_minobr} {prob_minobr}\n' +
+                         f'BERT Rusage: {idx_rusage} {prob_rusage}')
+
 
 bot.polling()
