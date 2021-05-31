@@ -112,6 +112,15 @@ def correct_answer(age):
         return '10-11 классы'
 
 
+def make_good_arr(array):
+    res_small1 = np.array([array[1][0], array[1][2], array[1][1]])
+    res_small2 = np.array([array[3][1], array[3][0], array[3][2]])
+    result = np.array([array[0], res_small1, array[2], res_small2, array[4]])
+    return result
+
+    return array
+
+
 def predict_sentiment(model, tokenizer, sentence):
     tokens = tokenizer.tokenize(sentence)
     tokens = tokens[:max_input_length - 2]
@@ -132,19 +141,17 @@ def predict_sentiment(model, tokenizer, sentence):
 
 
 def Kfold_predict(text, number_models):
-    d = ['2', '1', '0']
     models_predicts = []
     for i in range(number_models):
         model.load_state_dict(torch.load('readability_minobr' + str(i) + '_model.pt'))
 
         model_prediction = predict_sentiment(model, tokenizer, text)
         models_predicts.append(model_prediction)
-
+    models_predicts = make_good_arr(models_predicts)
     final_pred = np.mean(np.array(models_predicts), axis=0)
     max_preds = final_pred.argmax()
-    category = correct_answer(d[max_preds])
+    category = correct_answer(d0[max_preds])
     return category
 
-
-a = 'Никто не мог сказать этого наверное, но многие догадывались, что молчаливый пан Попельский пленился панной Яценко именно в ту короткую четверть часа, когда она исполняла трудную пьесу.'
-Kfold_predict(a, 5)
+# a =  'Никто не мог сказать этого наверное, но многие догадывались, что молчаливый пан Попельский пленился панной Яценко именно в ту короткую четверть часа, когда она исполняла трудную пьесу.'
+# Kfold_predict(a, 5)
