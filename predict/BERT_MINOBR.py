@@ -123,16 +123,24 @@ def predict_for_model(model, tokenizer, sentence):
     return preds[0]
 
 
+def make_good_arr(array):
+    res_small1 = np.array([array[1][0], array[1][2], array[1][1]])
+    res_small2 = np.array([array[3][1], array[3][0], array[3][2]])
+    result = np.array([array[0], res_small1, array[2], res_small2, array[4]])
+    return result
+
+
 def Kfold_predict(text, number_models):
     d = ['2', '1', '0']
     models_predicts = []
     for i in range(number_models):
         model.load_state_dict(
             torch.load(predict_path / 'minobr_models' / ('readability_minobr' + str(i) + '_model.pt')))
+        model.eval()
 
         model_prediction = predict_for_model(model, tokenizer, text)
         models_predicts.append(model_prediction)
-
+    models_predicts = make_good_arr(models_predicts)
     final_pred = np.mean(np.array(models_predicts), axis=0)
     max_preds = final_pred.argmax()
     category = correct_answer(d[max_preds])
